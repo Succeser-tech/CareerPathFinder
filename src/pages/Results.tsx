@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useRef } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { CAREERS, Career } from "../data/careers";
+import { CAREERS_EXPANDED } from "../data/careers_expanded";
+import { Career } from "../data/careers";
 import { Briefcase, TrendingUp, DollarSign, ChevronRight, RefreshCw, Download, FileText, Globe, BarChart3, Brain } from "lucide-react";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
@@ -26,69 +27,72 @@ export const Results = () => {
       const userPrefs = JSON.parse(storedData);
       setUserData(userPrefs);
 
-      // 1. Local Logic (Instant)
-      const scoredCareers = CAREERS.map(career => {
+      // 1. Robust Local Logic using Expanded Database
+      const scoredCareers = CAREERS_EXPANDED.map(career => {
         let score = 0;
-        const maxScore = 40;
+        const maxScore = 50; // Increased max score for better granularity
 
         // Weights
-        if (career.stream.includes(userPrefs.stream)) score += 10;
+        if (career.stream.includes(userPrefs.stream)) score += 15;
 
+        // Interest Matching (Exact & Fuzzy)
         userPrefs.interests.forEach((interest: string) => {
-          if (career.tags.some(t => t.toLowerCase() === interest.toLowerCase())) score += 4;
-          else if (
-            (interest.includes("Code") && career.tags.includes("Coding")) ||
-            (interest.includes("Design") && career.tags.includes("Visual Design"))
-          ) score += 2;
+          // Exact Match
+          if (career.tags.some(t => t.toLowerCase() === interest.toLowerCase())) score += 10;
+          // Partial Match (e.g. "Game Development" matches "Game")
+          else if (career.tags.some(t => t.toLowerCase().includes(interest.toLowerCase()) || interest.toLowerCase().includes(t.toLowerCase()))) score += 5;
         });
 
+        // Strength Matching
         userPrefs.strengths.forEach((strength: string) => {
-          if (career.tags.some(t => t.toLowerCase() === strength.toLowerCase())) score += 2;
-          if (strength === "Logic & Math" && (career.id.includes("data") || career.id.includes("ai") || career.id.includes("finance"))) score += 2;
-          if (strength === "Visual Creativity" && (career.id.includes("design") || career.id.includes("frontend"))) score += 2;
+          if (career.tags.some(t => t.toLowerCase() === strength.toLowerCase())) score += 3;
+          // Contextual Strength Matching
+          if (strength === "Logic & Math" && (career.tags.includes("Math") || career.tags.includes("Coding") || career.tags.includes("Finance"))) score += 3;
+          if (strength === "Visual Creativity" && (career.tags.includes("Design") || career.tags.includes("Art") || career.tags.includes("Creative"))) score += 3;
+          if (strength === "Communication" && (career.tags.includes("Business") || career.tags.includes("Law") || career.tags.includes("Management"))) score += 3;
         });
 
+        // Goal Matching
         userPrefs.goals.forEach((goal: string) => {
           if (goal === "High Salary" && (career.salary.includes("$1") || career.salary.includes("$2") || career.salary.includes("$3"))) score += 2;
           if (goal === "Remote Work" && career.workEnvironment.toLowerCase().includes("remote")) score += 2;
+          if (goal === "Innovation" && (career.tags.includes("Tech") || career.tags.includes("Research"))) score += 2;
         });
 
         let percentage = Math.round((score / maxScore) * 100);
-        if (percentage > 98) percentage = 98;
-        if (percentage < 40) percentage = 40 + Math.floor(Math.random() * 10);
+        if (percentage > 99) percentage = 99;
+        // Ensure a minimum score for visibility if it matches stream
+        if (percentage < 40 && career.stream.includes(userPrefs.stream)) percentage = 45 + Math.floor(Math.random() * 10);
 
         return { ...career, matchScore: percentage, isStreamMatch: career.stream.includes(userPrefs.stream) };
       });
 
+      // Filter for "AI Recommendations" (Top matches across ALL categories based on specific interests)
+      // This replaces the AI API call with a high-quality local search
+      const topInterestMatches = scoredCareers
+        .filter(c => userPrefs.interests.some((i: string) => c.tags.some(t => t.toLowerCase().includes(i.toLowerCase()))))
+        .sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0))
+        .slice(0, 5);
+
+      setAiRecommendations(topInterestMatches);
+
+      // Standard Stream Matches (exclude ones already shown in top matches)
       const inStream = scoredCareers
-        .filter(c => c.isStreamMatch)
+        .filter(c => c.isStreamMatch && !topInterestMatches.find(t => t.id === c.id))
         .sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0))
         .slice(0, 3);
 
+      // Other Matches
       const outStream = scoredCareers
-        .filter(c => !c.isStreamMatch)
+        .filter(c => !c.isStreamMatch && !topInterestMatches.find(t => t.id === c.id))
         .sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0))
         .slice(0, 3);
 
       setStreamRecommendations(inStream);
       setOtherRecommendations(outStream);
 
-      // 2. Fetch AI Recommendations
-      const fetchAiResults = async () => {
-        setIsLoadingAi(true);
-        try {
-          const aiResults = await getCareerRecommendations(userPrefs);
-          if (aiResults && aiResults.length > 0) {
-            setAiRecommendations(aiResults);
-          }
-        } catch (err) {
-          console.error("Failed to load AI results", err);
-        } finally {
-          setIsLoadingAi(false);
-        }
-      };
-
-      fetchAiResults();
+      // No loading state needed anymore!
+      setIsLoadingAi(false);
     }
   }, []);
 
