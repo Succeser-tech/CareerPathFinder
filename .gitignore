@@ -5,3 +5,11 @@ dist/
 *.log
 coverage/
 .vscode/
+
+# Vercel
+.vercel
+.vercel.json
+
+# Build
+build/
+*.tsbuildinfo
